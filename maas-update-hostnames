@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""usage: maas-update-hostnames [--maas-url=URL] [--api-key=KEY] FILE
+
+Updates hostnames in Maas from a source yaml file.
+
+    --maas-url URL, -u URL      The HTTP url for Maas.  ie: http://127.0.0.1/MAAS
+                                Can also be passed as an environment variable: MAAS_URL
+    --api-key KEY, -k KEY       The API key for Maas. Can also be passed as an environment
+                                variable: MAAS_API_KEY
+    --version, -v               Version.
+    --help, -h                  Hello.
+    FILE                        YAML file containing hostname definitions.  See below for format.
+
+    Both --maas-url and --api-key (or their env equivalent) are *required*.
+
+    But if both environment variables and command line options are passed, the command line options
+    take precedence.
+
+    The YAML format consists of specifying the domain name, host name, and the "Power" IP address.
+    The IP address is used to match the correct node in Maas.
+
+    Example file
+    ============
+
+      example.com:
+        node-01: 127.0.0.1
+        node-02: 127.0.0.2
+"""
+from apiclient import maas_client
+import docopt
+import json
+import os
+import pdb
+from pprint import pprint
+import sys
+import yaml
+
+
+def main():
+    args = docopt.docopt(__doc__, version="0.1")
+
+    opts = {'maas-url': None, 'api-key': None}
+
+    if args['--maas-url']:
+        opts['maas-url'] = args['--maas-url']
+    else:
+        opts['maas-url'] = os.environ.get('MAAS_URL', None)
+
+    if args['--api-key']:
+        opts['api-key'] = args['--api-key']
+    else:
+        opts['api-key'] = os.environ.get('MAAS_API_KEY', None)
+
+    src_file = args['FILE']
+
+    if not (opts['maas-url'] and opts['api-key']):
+        print(__doc__)
+        sys.exit(1)
+
+    if not opts['maas-url'].endswith('api/2.0'):
+        opts['maas-url'] += '/api/2.0'
+
+
+    auth = maas_client.MAASOAuth(*opts['api-key'].split(":"))
+    client = maas_client.MAASClient(auth, maas_client.MAASDispatcher(), opts['maas-url'])
+
+    with open(src_file, 'r') as fp:
+        src_yaml = fp.read()
+    parsed_yaml = yaml.load(src_yaml)
+
+    maas_node_list = {}
+    maas_nodes_power_stats = json.loads(client.get("machines/", "power_parameters").read())
+    maas_domain_stats = json.loads(client.get("domains/").read())
+
+    for domain, hosts in parsed_yaml.items():
+        # Lookup domain id, if it exists
+        domain_id = find_domain_id(maas_domain_stats, domain)
+        if not domain_id:
+            print("Could not find domain {} in Maas.  Did you create it yet?  "
+                  "Skipping domain and {} hosts.".format(domain, len(hosts)))
+            continue
+
+        for host, power_ip in hosts.items():
+            system_id = find_system_id(maas_nodes_power_stats, power_ip)
+            if not system_id:
+                print("Could not find node {}/{} in Maas results.".format(host, power_ip))
+                continue
+
+            node_endpoint = "machines/{}/".format(system_id)
+            orig_node_data = json.loads(client.get(node_endpoint).read())
+            result = json.loads(client.put(node_endpoint, domain=domain_id, hostname=host).read())
+            if result:
+                print("Node updated: {} --> {}".format(orig_node_data['fqdn'], result['fqdn']))
+            else:
+                print("Error updating host {}/{}".format(host, power_ip))
+                print(result)
+                
+
+def find_domain_id(domain_stats, domain):
+    for d in domain_stats:
+        if d['name'] == domain:
+            return str(d['id'])
+    return None
+
+
+def find_system_id(power_stats, ip):
+    for system_id, stats in power_stats.items():
+        if stats['power_address'] == ip:
+            return system_id
+    return None
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
