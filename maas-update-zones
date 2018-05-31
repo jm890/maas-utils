@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""usage: maas-update-zones [--maas-url=URL] [--api-key=KEY] FILE
+
+Add hosts to zones in Maas from a source yaml file.
+
+    --maas-url URL, -u URL      The HTTP url for Maas.  ie: http://127.0.0.1/MAAS
+                                Can also be passed as an environment variable: MAAS_URL
+    --api-key KEY, -k KEY       The API key for Maas. Can also be passed as an environment
+                                variable: MAAS_API_KEY
+    --version, -v               Version.
+    --help, -h                  Hello.
+    FILE                        YAML file containing host/zone definitions.  See below for format.
+
+    Both --maas-url and --api-key (or their env equivalent) are *required*.
+
+    But if both environment variables and command line options are passed, the command line options
+    take precedence.
+
+    The YAML format consists of specifying the domain name, host name, and the "Power" IP address.
+    The IP address is used to match the correct node in Maas.
+
+    Example file
+    ============
+
+      zone_name:
+        - node-01
+        - node-02
+"""
+from apiclient import maas_client
+import docopt
+import json
+import os
+import pdb
+from pprint import pprint
+import sys
+import yaml
+
+
+def main():
+    args = docopt.docopt(__doc__, version="0.1")
+
+    opts = {'maas-url': None, 'api-key': None}
+
+    if args['--maas-url']:
+        opts['maas-url'] = args['--maas-url']
+    else:
+        opts['maas-url'] = os.environ.get('MAAS_URL', None)
+
+    if args['--api-key']:
+        opts['api-key'] = args['--api-key']
+    else:
+        opts['api-key'] = os.environ.get('MAAS_API_KEY', None)
+
+    src_file = args['FILE']
+
+    if not (opts['maas-url'] and opts['api-key']):
+        print(__doc__)
+        sys.exit(1)
+
+    if not opts['maas-url'].endswith('api/2.0'):
+        opts['maas-url'] += '/api/2.0'
+
+    auth = maas_client.MAASOAuth(*opts['api-key'].split(":"))
+    client = maas_client.MAASClient(auth, maas_client.MAASDispatcher(), opts['maas-url'])
+
+    with open(src_file, 'r') as fp:
+        src_yaml = fp.read()
+    parsed_yaml = yaml.load(src_yaml)
+
+    maas_node_list = {}
+    maas_nodes_power_stats = json.loads(client.get("machines/", "power_parameters").read())
+    # {'bshyks': {'mac_address': '',
+    #             'power_address': '192.168.10.3',
+    #             'power_driver': 'LAN_2_0',
+    #             'power_pass': '',
+    #             'power_user': ''},
+    #            {}, ...
+
+    maas_zone_stats = json.loads(client.get("zones/").read())
+    # [{'description': '',
+    #   'id': 1,
+    #   'name': 'default',
+    #   'resource_uri': '/MAAS/api/2.0/zones/default/'},
+    #  {'description': '',
+    #   'id': 2,
+    #   'name': 'zone-01',
+    #   'resource_uri': '/MAAS/api/2.0/zones/zone-01/'}]
+
+    maas_machines = json.loads(client.get("machines/").read())
+    # [{'address_ttl': None,
+    #   'architecture': 'amd64/generic',
+    #   'bcaches': [],
+    #   'blockdevice_set': [],
+    #   'boot_disk': None,
+    #   'boot_interface': {'children': [],
+    #                      'discovered': None,
+    #                      'effective_mtu': 1500,
+    #                      'enabled': True,
+    #                      'id': 2,
+    #                      'links': [],
+    #                      'mac_address': 'ab:cd:ef:ab:cd:01',
+    #                      'name': 'eth0',
+    #                      'params': '',
+    #                      'parents': [],
+    #                      'resource_uri': '/MAAS/api/2.0/nodes/sfas88/interfaces/2/',
+    #                      'system_id': 'sfas88',
+    #                      'tags': [],
+    #                      'type': 'physical',
+    #                      'vlan': None},
+    #   'cache_sets': [],
+    #   'commissioning_status': -1,
+    #   'commissioning_status_name': 'Unknown',
+    #   'cpu_count': 0,
+    #   'cpu_test_status': -1,
+    #   'cpu_test_status_name': 'Unknown',
+    #   'current_commissioning_result_id': 2,
+    #   'current_installation_result_id': None,
+    #   'current_testing_result_id': 3,
+    #   'default_gateways': {'ipv4': {'gateway_ip': None, 'link_id': None},
+    #                        'ipv6': {'gateway_ip': None, 'link_id': None}},
+    #   'disable_ipv4': False,
+    #   'distro_series': '',
+    #   'domain': {'authoritative': True,
+    #              'id': 0,
+    #              'name': 'maas',
+    #              'resource_record_count': 0,
+    #              'resource_uri': '/MAAS/api/2.0/domains/0/',
+    #              'ttl': None},
+    #   'fqdn': 'test-node-01.maas',
+    #   'hostname': 'test-node-01',
+    #   'hwe_kernel': '',
+    #   'interface_set': [{'children': [],
+    #                      'discovered': None,
+    #                      'effective_mtu': 1500,
+    #                      'enabled': True,
+    #                      'id': 2,
+    #                      'links': [],
+    #                      'mac_address': 'ab:cd:ef:ab:cd:01',
+    #                      'name': 'eth0',
+    #                      'params': '',
+    #                      'parents': [],
+    #                      'resource_uri': '/MAAS/api/2.0/nodes/sfas88/interfaces/2/',
+    #                      'system_id': 'sfas88',
+    #                      'tags': [],
+    #                      'type': 'physical',
+    #                      'vlan': None}],
+    #   'ip_addresses': [],
+    #   'iscsiblockdevice_set': [],
+    #   'memory': 0,
+    #   'memory_test_status': -1,
+    #   'memory_test_status_name': 'Unknown',
+    #   'min_hwe_kernel': '',
+    #   'netboot': True,
+    #   'node_type': 0,
+    #   'node_type_name': 'Machine',
+    #   'osystem': '',
+    #   'other_test_status': -1,
+    #   'other_test_status_name': 'Unknown',
+    #   'owner': 'nyanz',
+    #   'owner_data': {},
+    #   'physicalblockdevice_set': [],
+    #   'pod': None,
+    #   'power_state': 'unknown',
+    #   'power_type': 'ipmi',
+    #   'raids': [],
+    #   'resource_uri': '/MAAS/api/2.0/machines/sfas88/',
+    #   'special_filesystems': [],
+    #   'status': 0,
+    #   'status_action': '',
+    #   'status_message': "From 'Commissioning' to 'New'",
+    #   'status_name': 'New',
+    #   'storage': 0.0,
+    #   'storage_test_status': -1,
+    #   'storage_test_status_name': 'Unknown',
+    #   'swap_size': None,
+    #   'system_id': 'sfas88',
+    #   'tag_names': [],
+    #   'testing_status': -1,
+    #   'testing_status_name': 'Unknown',
+    #   'virtualblockdevice_set': [],
+    #   'volume_groups': [],
+    #   'zone': {'description': '',
+    #            'id': 1,
+    #            'name': 'default',
+    #            'resource_uri': '/MAAS/api/2.0/zones/default/'}},
+
+    for zone_name, hosts in parsed_yaml.items():
+        # Lookup domain id, if it exists
+        zone_id = find_zone_id(maas_zone_stats, zone_name)
+        if not zone_id:
+            print("Could not find zone '{}' in Maas.  Did you create it yet?  "
+                  "Skipping zone and {} hosts.".format(zone_name, len(hosts)))
+            continue
+
+        for hostname in hosts:
+            system_id = find_system_id(maas_machines, hostname)
+            if not system_id:
+                print("Could not find node '{}' in Maas results.".format(hostname))
+                continue
+
+            node_endpoint = "machines/{}/".format(system_id)
+            orig_node_data = json.loads(client.get(node_endpoint).read())
+            result = json.loads(client.put(node_endpoint, zone=zone_name).read())
+            if result:
+                print("Node '{}' updated: zone '{}' --> '{}'".format(hostname, orig_node_data['zone']['name'], result['zone']['name']))
+            else:
+                print("Error updating host '{}'".format(hostname))
+                print(result)
+
+
+def find_zone_id(zone_stats, zone_name):
+    for z in zone_stats:
+        if z['name'] == zone_name:
+            return str(z['id'])
+    return None
+
+
+def find_system_id(maas_machines, hostname):
+    for machine in maas_machines:
+        if machine['hostname'] == hostname:
+            return machine['system_id']
+    return None
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

@@ -60,7 +60,6 @@ def main():
     if not opts['maas-url'].endswith('api/2.0'):
         opts['maas-url'] += '/api/2.0'
 
-
     auth = maas_client.MAASOAuth(*opts['api-key'].split(":"))
     client = maas_client.MAASClient(auth, maas_client.MAASDispatcher(), opts['maas-url'])
 
@@ -94,7 +93,7 @@ def main():
             else:
                 print("Error updating host {}/{}".format(host, power_ip))
                 print(result)
-                
+
 
 def find_domain_id(domain_stats, domain):
     for d in domain_stats:
