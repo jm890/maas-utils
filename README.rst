@@ -21,9 +21,11 @@ maas-update-hostname
   
       Both --maas-url and --api-key (or their env equivalent) are *required*.
   
-      But if both environment variables and command line options are passed, the command line options take precedence.
+      But if both environment variables and command line options are passed, the command line options
+      take precedence.
   
-      The YAML format consists of specifying the domain name, host name, and the "Power" IP address.  The IP address is used to match the correct node in Maas.
+      The YAML format consists of specifying the domain name, host name, and the "Power" IP address.
+      The IP address is used to match the correct node in Maas.
   
       Example file
       ============
@@ -55,8 +57,8 @@ maas-update-zones
       But if both environment variables and command line options are passed, the command line options
       take precedence.
   
-      The YAML format consists of specifying the domain name, host name, and the "Power" IP address.
-      The IP address is used to match the correct node in Maas.
+      The YAML format consists of specifying the zone name, and then the short hostname as a list.
+      The short hostname is used to match the correct node in Maas.
   
       Example file
       ============
