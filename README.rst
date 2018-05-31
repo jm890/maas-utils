@@ -5,7 +5,7 @@ maas-utils
 maas-update-hostname
 --------------------
 
-..code::
+.. code::
 
   usage: maas-update-hostnames [--maas-url=URL] [--api-key=KEY] FILE
 
@@ -36,7 +36,7 @@ maas-update-hostname
 maas-update-zones
 -----------------
 
-..code:: 
+.. code:: 
 
   usage: maas-update-zones [--maas-url=URL] [--api-key=KEY] FILE
   
